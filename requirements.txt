@@ -1,0 +1,15 @@
+# Core dependencies
+langchain-core
+langchain-openai
+langchain-anthropic
+aiohttp
+beautifulsoup4
+duckduckgo-search
+
+# LLM providers
+openai
+anthropic
+
+# Utilities
+python-dotenv
+typing-extensions 

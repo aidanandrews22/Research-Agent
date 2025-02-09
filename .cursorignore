@@ -1,0 +1,12 @@
+logs/
+**/logs/
+**/*.json
+**/*.log
+**/*.txt
+**/*.md
+**/*.csv
+**/*.jsonl
+**/*.jsonl.gz
+reports/
+.git
+**/.git

@@ -1,0 +1,67 @@
+{
+  "run_id": "1a3958d6-d14e-43e6-8ea2-a85e1a53e773",
+  "timestamp": "2025-02-03T21:56:08.252818",
+  "config": {
+    "report_structure": "The report structure should focus on breaking-down the user-provided topic:\n\n1. Introduction (no research needed)\n   - Brief overview of the topic area\n\n2. Main Body Sections:\n   - Each section should focus on a sub-topic of the user-provided topic\n   - Include any key concepts and definitions\n   - Provide real-world examples or case studies where applicable\n   \n3. Conclusion\n   - Aim for 1 structural element (either a list or table) that distills the main body sections \n   - Provide a concise summary of the report",
+    "number_of_queries": 10,
+    "tavily_topic": "general",
+    "tavily_days": null,
+    "planner_model_type": 1,
+    "planner_model": "local",
+    "writer_model": "claude-3-5-sonnet-latest",
+    "max_results_per_source": 50,
+    "min_relevance_score": 60.0,
+    "max_concurrent_fetches": 5,
+    "fetch_timeout": 30,
+    "fetch_retries": 3
+  },
+  "raw_responses": [
+    {
+      "stage": "planner_queries",
+      "timestamp": "2025-02-03T21:56:09.796442",
+      "prompt": {
+        "name": null,
+        "input_variables": [
+          "number_of_queries",
+          "report_organization",
+          "topic"
+        ],
+        "optional_variables": [],
+        "output_parser": null,
+        "partial_variables": {},
+        "metadata": null,
+        "tags": null,
+        "messages": [
+          {}
+        ],
+        "validate_template": false,
+        "_type": "chat"
+      },
+      "raw_response": "{\n    \"queries\": ["
+    },
+    {
+      "stage": "report_plan",
+      "timestamp": "2025-02-03T21:56:14.772236",
+      "prompt": {
+        "name": null,
+        "input_variables": [
+          "context",
+          "feedback",
+          "report_organization",
+          "topic"
+        ],
+        "optional_variables": [],
+        "output_parser": null,
+        "partial_variables": {},
+        "metadata": null,
+        "tags": null,
+        "messages": [
+          {}
+        ],
+        "validate_template": false,
+        "_type": "chat"
+      },
+      "raw_response": "and commas\n\nNow, think of how to break down the topic into sections. Consider including sections on"
+    }
+  ]
+}
