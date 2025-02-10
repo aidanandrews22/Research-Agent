@@ -46,31 +46,40 @@ Example of BAD queries to avoid:
 report_planner_instructions="""I want a plan for a report. \n\nThe topic of the report is:\n\n{topic}\n\nThe report should follow this organization: \n\n{report_organization}\n\nHere is context to use to plan the sections of the report: \n\n{context}\n\nHere is feedback on the report structure from review (if any):\n\n{feedback}\n\nIMPORTANT: Return your response as a valid JSON object in the following format (do not include any additional text):\n{{"sections": [{{"name": "Introduction", "description": "Brief overview of the topic.", "research": false, "content": ""}}, {{"name": "Main Section", "description": "Detailed discussion of key aspects.", "research": true, "content": ""}}, {{"name": "Conclusion", "description": "Summary and final thoughts.", "research": false, "content": ""}}]}}\n\nMake sure to:\n1. Include an introduction (research: false) and conclusion (research: false)\n2. Leave all content fields empty (just "")\n3. Set research to true for sections needing web research\n4. Use proper JSON formatting with double quotes"""
 
 # Query writer instructions
-query_writer_instructions="""Your goal is to generate targeted web search queries that will gather comprehensive information for writing a technical report section.
+query_writer_instructions = """You are an expert at generating focused search queries to gather information for a section of a technical report.
 
-Topic for this section:
-{section_topic}
+Section Name: {section_name}
+Section Description: {section_description}
 
-When generating {number_of_queries} search queries, ensure they:
-1. Cover different aspects of the topic
-2. Include specific technical terms
-3. Target recent information where relevant
-4. Look for comparisons or differentiators
-5. Search for both documentation and practical examples
+Your task is to generate 3-5 specific search queries that will help gather comprehensive information for this section.
 
-IMPORTANT: Return your response in the following JSON format:
-{{
-    "queries": [
-        {{"search_query": "your first query here"}},
-        {{"search_query": "your second query here"}}
-    ]
-}}
-"""
+Guidelines for queries:
+1. Make queries specific and targeted
+2. Focus on technical details and implementation
+3. Include version numbers or dates where relevant
+4. Prioritize authoritative sources
+5. Avoid marketing content
+
+IMPORTANT: Return your response in EXACTLY this format, with no additional text:
+{{"queries": [{{"search_query": "first specific query"}}, {{"search_query": "second specific query"}}, {{"search_query": "third specific query"}}]}}
+
+Example of GOOD queries:
+{{"queries": [
+    {{"search_query": "python pandas read_csv performance optimization techniques 2024"}},
+    {{"search_query": "efficient CSV data indexing methods for large datasets"}},
+    {{"search_query": "best practices CSV data extraction python libraries"}}
+]}}
+
+Example of BAD queries to avoid:
+- Queries with line breaks or extra spaces
+- Queries containing JSON characters like {{ or }}
+- Vague queries like "CSV processing"
+- Queries that are just keywords without context"""
 
 # Section writer instructions
 section_writer_instructions = """You are an expert technical writer crafting one section of a technical report.
 
-Topic for this section:
+Section Topic:
 {section_topic}
 
 Guidelines for writing:
@@ -121,7 +130,7 @@ Guidelines for writing:
 
 final_section_writer_instructions="""You are an expert technical writer crafting a section that synthesizes information from the rest of the report.
 
-Section to write: 
+Section Topic: 
 {section_topic}
 
 Available report content:

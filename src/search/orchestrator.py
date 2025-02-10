@@ -12,6 +12,9 @@ from .content_fetcher import ContentFetcher
 
 logger = logging.getLogger(__name__)
 
+# Flag to control Tavily search - set to False to disable
+ENABLE_TAVILY = False
+
 @dataclass
 class SearchConfig:
     """Configuration for the search orchestrator."""
@@ -21,7 +24,7 @@ class SearchConfig:
     fetch_timeout: int = 15  # Reduced timeout for faster failure detection
     fetch_retries: int = 2  # Reduced retries to speed up process
     ranking_batch_size: int = 10  # Increased from 5 for faster ranking
-    max_ranked_results: int = 5  # Reduced from 10 to minimize content fetching
+    max_ranked_results: int = 10  # Reduced from 10 to minimize content fetching
 
 class SearchOrchestrator:
     """Coordinates the entire search process across multiple providers."""
@@ -37,11 +40,12 @@ class SearchOrchestrator:
         
         Args:
             llm: LangChain chat model for ranking
-            tavily_client: Optional Tavily search client
+            tavily_client: Optional Tavily client
             config: Search configuration
         """
         self.config = config or SearchConfig()
-        self.tavily = None  # Disabled Tavily by default for speed
+        # Only initialize Tavily if enabled and client provided
+        self.tavily = tavily_client if ENABLE_TAVILY else None
         
         # Initialize components
         self.ddg = DuckDuckGoSearch(max_results=self.config.max_results_per_source)

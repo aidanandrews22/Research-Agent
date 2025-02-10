@@ -11,12 +11,12 @@ DEFAULT_REPORT_STRUCTURE = """The report structure should focus on breaking-down
 1. Introduction (no research needed)
    - Brief overview of the topic area
 
-2. Main Body Sections:
+2-5. At Least 3 Main Body Sections:
    - Each section should focus on a sub-topic of the user-provided topic
    - Include any key concepts and definitions
    - Provide real-world examples or case studies where applicable
    
-3. Conclusion
+6. Conclusion
    - Aim for 1 structural element (either a list or table) that distills the main body sections 
    - Provide a concise summary of the report"""
 
@@ -25,7 +25,7 @@ class Configuration:
     """The configurable fields for the chatbot."""
     # Report settings
     report_structure: str = DEFAULT_REPORT_STRUCTURE
-    number_of_queries: int = 10 
+    number_of_queries: int = 10  # Increased from 1 to get more comprehensive coverage
     tavily_topic: str = "general"
     tavily_days: str = None
     
@@ -35,7 +35,7 @@ class Configuration:
     writer_model: str = "claude-3-5-sonnet-latest"
     
     # Search settings
-    max_results_per_source: int = 50  # Maximum results to get from each search provider
+    max_results_per_source: int = 50  # Increased from 1 to get more comprehensive results
     min_relevance_score: float = 60.0  # Minimum score (0-100) for ranked results
     max_concurrent_fetches: int = 5  # Maximum concurrent content fetches
     fetch_timeout: int = 30  # Timeout for content fetching in seconds

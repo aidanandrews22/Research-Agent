@@ -1,6 +1,6 @@
 import asyncio
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict
 import sys
 import os
 import re
@@ -9,6 +9,8 @@ import logging
 from datetime import datetime
 import uuid
 import dotenv
+import torch
+import itertools
 
 dotenv.load_dotenv()
 
@@ -47,6 +49,20 @@ from prompts import (
     final_section_writer_instructions
 )
 
+# Global semaphore for LLM access
+llm_semaphore = asyncio.Semaphore(1)
+
+MAX_CHARS_FOR_CONTEXT = 4000  # Reduced from 8000 to be more conservative
+
+def _clear_memory():
+    """Aggressively clear memory."""
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        # More aggressive GPU memory clearing
+        torch.cuda.synchronize()
+
 class ReportGenerator:
     def __init__(self, config: Optional[Configuration] = None):
         self.config = config or Configuration()
@@ -60,7 +76,7 @@ class ReportGenerator:
         
         # Initialize search
         self.search = SearchOrchestrator(
-            llm=self.writer,  # Use the writer model for ranking
+            llm=self.planner,  # Use the planner model for ranking
             tavily_client=tavily_search_async,  # Pass existing Tavily client
             config=SearchConfig(
                 max_results_per_source=self.config.max_results_per_source,
@@ -81,6 +97,14 @@ class ReportGenerator:
             "search_results": []  # Add search results tracking
         }
         
+    async def _llm_call(self, llm, prompt, *args, **kwargs):
+        """Wrapper for LLM calls to ensure sequential execution"""
+        async with llm_semaphore:
+            # Clear CUDA cache before each LLM call
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            return await llm.ainvoke(prompt, *args, **kwargs)
+
     def _log_llm_response(self, stage: str, prompt: dict, response: str):
         """Log a raw LLM response with metadata."""
         self.log_data["raw_responses"].append({
@@ -106,7 +130,10 @@ class ReportGenerator:
             json_end = text.rfind('}') + 1
             if json_start >= 0 and json_end > json_start:
                 json_str = text[json_start:json_end]
+                # Clean up any escaped quotes and normalize to proper JSON
+                json_str = json_str.replace('\\"', '"').replace('\\n', ' ').strip()
                 data = json.loads(json_str)
+                
                 if isinstance(data, dict) and "queries" in data:
                     queries = []
                     for q in data["queries"]:
@@ -120,10 +147,12 @@ class ReportGenerator:
                                 queries.append(query)
                     if queries:
                         return queries[:self.config.number_of_queries]
-        except:
-            pass
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse JSON response: {e}")
+        except Exception as e:
+            logger.warning(f"Error extracting queries: {e}")
 
-        # Try to find quoted queries
+        # Fallback: Try to find quoted queries
         quoted_queries = []
         for line in text.split('\n'):
             # Look for text in quotes
@@ -139,7 +168,7 @@ class ReportGenerator:
                     if query and not query.startswith(("{", "[")):
                         quoted_queries.append(query)
         
-        return quoted_queries[:self.config.number_of_queries]
+        return quoted_queries[:self.config.number_of_queries] if quoted_queries else ["No valid queries found"]
     
     def _get_response_content(self, response) -> str:
         """Extract content from an LLM response."""
@@ -233,15 +262,15 @@ class ReportGenerator:
                 
                 # Generate queries for this section
                 print("  Generating search queries...")
-                section.queries = await self._generate_section_queries(section)
+                section_queries = await self._generate_section_queries(section)
                 print("  Generated queries:")
-                for j, query in enumerate(section.queries, 1):
+                for j, query in enumerate(section_queries, 1):
                     print(f"    {j}. {query.search_query}")
                 
                 # Search and fetch content for section queries
                 print("  Gathering research...")
                 section_content = []
-                for query in section.queries:
+                for query in section_queries:
                     results = await self.search.search_and_fetch(
                         query=query.search_query,
                         num_results=self.config.number_of_queries
@@ -268,10 +297,26 @@ class ReportGenerator:
             
             # Save report if path provided
             if output_path:
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                with open(output_path, 'w') as f:
-                    f.write(report)
-                print(f"\n✅ Report saved to: {output_path}")
+                try:
+                    # Ensure output_path is not empty and has a valid directory
+                    if not output_path.strip():
+                        output_path = "../reports/report.md"  # Default filename
+                    
+                    # Get the directory path
+                    dir_path = os.path.dirname(output_path)
+                    
+                    # Create directory if it doesn't exist and if there's a directory path
+                    if dir_path:
+                        os.makedirs(dir_path, exist_ok=True)
+                    
+                    # Write the report
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(report)
+                    print(f"\n✅ Report saved to: {output_path}")
+                except Exception as e:
+                    logger.error(f"Error saving report to file: {str(e)}")
+                    print(f"\n⚠️  Could not save report to file: {str(e)}")
+                    print("Report content will still be displayed below.\n")
             
             return report
             
@@ -318,7 +363,8 @@ class ReportGenerator:
         """Generate initial search queries for the topic."""
         prompt = ChatPromptTemplate.from_template(report_planner_query_writer_instructions)
         
-        response = await self.planner.ainvoke(
+        response = await self._llm_call(
+            self.planner,
             prompt.format(
                 topic=state["topic"],
                 report_organization=self.config.report_structure,
@@ -333,20 +379,154 @@ class ReportGenerator:
         query_texts = self._extract_queries_from_text(content)
         return [SearchQuery(search_query=q) for q in query_texts]
     
+    async def _process_context_chunks(
+        self,
+        chunks: List[str],
+        prompt_template: ChatPromptTemplate,
+        stage: str = "processing",  # Add stage parameter
+        **prompt_kwargs
+    ) -> str:
+        """Process multiple context chunks and combine their results."""
+        all_responses = []
+        total_chunks = len(chunks)
+        
+        # Log the start of chunk processing
+        logger.info(f"Starting to process {total_chunks} chunks for {stage}")
+        self._log_llm_response(
+            f"{stage}_chunks_start",
+            {"total_chunks": total_chunks},
+            f"Beginning processing of {total_chunks} chunks"
+        )
+        
+        try:
+            for i, chunk in enumerate(chunks, 1):
+                logger.info(f"Processing chunk {i}/{total_chunks} for {stage}")
+                
+                # Force garbage collection before processing each chunk
+                import gc
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                
+                # Add chunk metadata to help the model understand context
+                chunk_context = f"[Processing chunk {i}/{total_chunks}]\n\n{chunk}"
+                
+                # Include previous summary if this isn't the first chunk
+                if all_responses:
+                    chunk_context = f"Previous summary:\n{all_responses[-1]}\n\nContinuing with new content:\n{chunk_context}"
+                
+                # Log the chunk being processed
+                self._log_llm_response(
+                    f"{stage}_chunk_{i}",
+                    {"chunk_size": len(chunk_context)},
+                    f"Processing chunk {i}/{total_chunks}"
+                )
+                
+                try:
+                    response = await self._llm_call(
+                        self.planner,
+                        prompt_template.format(
+                            context=chunk_context,
+                            **prompt_kwargs
+                        )
+                    )
+                    
+                    content = self._get_response_content(response)
+                    all_responses.append(content)
+                    
+                    # Log successful chunk completion
+                    self._log_llm_response(
+                        f"{stage}_chunk_{i}_complete",
+                        {"chunk_size": len(chunk_context)},
+                        content
+                    )
+                    
+                except Exception as e:
+                    logger.error(f"Error processing chunk {i}/{total_chunks}: {str(e)}")
+                    self._log_llm_response(
+                        f"{stage}_chunk_{i}_error",
+                        {"error": str(e)},
+                        f"Failed to process chunk {i}"
+                    )
+                    # Continue with next chunk instead of failing completely
+                    continue
+                
+                # Force cleanup after each chunk
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            
+            # Combine all responses
+            if len(all_responses) == 1:
+                return all_responses[0]
+            
+            # For multiple chunks, generate a final summary
+            logger.info(f"Generating final summary for {stage}")
+            combined_response = "\n\n".join(all_responses)
+            summary_prompt = ChatPromptTemplate.from_template(
+                "Synthesize these separate analyses into a single coherent response:\n\n{text}"
+            )
+            
+            # Log start of summary generation
+            self._log_llm_response(
+                f"{stage}_summary_start",
+                {"response_count": len(all_responses)},
+                "Starting final summary generation"
+            )
+            
+            try:
+                final_response = await self._llm_call(
+                    self.planner,
+                    summary_prompt.format(text=combined_response)
+                )
+                
+                result = self._get_response_content(final_response)
+                
+                # Log successful summary completion
+                self._log_llm_response(
+                    f"{stage}_summary_complete",
+                    {"summary_length": len(result)},
+                    result
+                )
+                
+                return result
+                
+            except Exception as e:
+                logger.error(f"Error generating final summary: {str(e)}")
+                self._log_llm_response(
+                    f"{stage}_summary_error",
+                    {"error": str(e)},
+                    "Failed to generate final summary"
+                )
+                # Return the concatenated responses if summary fails
+                return combined_response
+                
+        except Exception as e:
+            logger.error(f"Error in chunk processing: {str(e)}")
+            self._log_llm_response(
+                f"{stage}_error",
+                {"error": str(e)},
+                "Failed during chunk processing"
+            )
+            raise
+
     async def _generate_report_plan(self, state: dict, context: str) -> Sections:
         """Generate the report plan based on search results."""
         prompt = ChatPromptTemplate.from_template(report_planner_instructions)
         
-        response = await self.planner.ainvoke(
-            prompt.format(
-                topic=state["topic"],
-                report_organization=self.config.report_structure,
-                context=context,
-                feedback=state["feedback_on_report_plan"]
-            )
+        # Split context into manageable chunks
+        chunks = self._chunk_text(context)
+        
+        # Process all chunks
+        content = await self._process_context_chunks(
+            chunks,
+            prompt,
+            stage="report_plan",
+            topic=state["topic"],
+            report_organization=self.config.report_structure,
+            feedback=state["feedback_on_report_plan"]
         )
         
-        content = self._get_response_content(response)
         self._log_llm_response("report_plan", prompt.dict(), content)
         
         try:
@@ -401,16 +581,17 @@ class ReportGenerator:
         """Generate search queries for a specific section."""
         prompt = ChatPromptTemplate.from_template(query_writer_instructions)
         
-        response = await self.planner.ainvoke(
+        response = await self._llm_call(
+            self.planner,
             prompt.format(
-                topic=section.topic,
-                section_title=section.title
+                section_name=section.name,
+                section_description=section.description
             )
         )
         
         content = self._get_response_content(response)
         self._log_llm_response(
-            f"section_queries_{section.title}",
+            f"section_queries_{section.name}",
             prompt.dict(),
             content
         )
@@ -439,28 +620,70 @@ class ReportGenerator:
             
             prompt = ChatPromptTemplate.from_template(template)
             
-            response = await self.writer.ainvoke(
-                prompt.format(
-                    topic=section.topic,
-                    section_title=section.title,
-                    context=context
-                )
+            # Split context into chunks
+            chunks = self._chunk_text(context)
+            
+            # Process all chunks
+            content = await self._process_context_chunks(
+                chunks,
+                prompt,
+                stage=f"section_{section.name}",
+                section_topic=section.name
             )
             
-            content = self._get_response_content(response)
             self._log_llm_response(
-                f"section_content_{section.title}",
+                f"section_content_{section.name}",
                 prompt.dict(),
                 content
             )
             
-            # Log the response before returning
             logger.info(f"Generated content length for {section.name}: {len(content) if content else 0}")
             return content
             
         except Exception as e:
             logger.error(f"Error writing section content: {str(e)}")
             return ""
+
+    def _chunk_text(self, text: str, max_chars: int = MAX_CHARS_FOR_CONTEXT) -> List[str]:
+        """Split text into chunks of size <= max_chars."""
+        if len(text) <= max_chars:
+            return [text]
+            
+        chunks = []
+        current_chunk = []
+        current_size = 0
+        
+        # Split by double newlines to preserve paragraph structure
+        paragraphs = text.split('\n\n')
+        
+        for paragraph in paragraphs:
+            # If a single paragraph is too long, split it further
+            if len(paragraph) > max_chars:
+                # Split into sentences (crude but effective)
+                sentences = paragraph.replace('. ', '.\n').split('\n')
+                for sentence in sentences:
+                    if current_size + len(sentence) + 2 <= max_chars:
+                        current_chunk.append(sentence)
+                        current_size += len(sentence) + 2
+                    else:
+                        if current_chunk:
+                            chunks.append('\n\n'.join(current_chunk))
+                        current_chunk = [sentence]
+                        current_size = len(sentence)
+            else:
+                if current_size + len(paragraph) + 2 <= max_chars:
+                    current_chunk.append(paragraph)
+                    current_size += len(paragraph) + 2
+                else:
+                    if current_chunk:
+                        chunks.append('\n\n'.join(current_chunk))
+                    current_chunk = [paragraph]
+                    current_size = len(paragraph)
+        
+        if current_chunk:
+            chunks.append('\n\n'.join(current_chunk))
+            
+        return chunks
 
 async def interactive_report_generation():
     """Interactive terminal interface for report generation."""
@@ -490,7 +713,15 @@ async def interactive_report_generation():
         
     # Get output path
     print("\nWhere would you like to save the report? (default: report.md)")
-    output_path = input().strip() or "report.md"
+    output_path = input().strip()
+    
+    # Use default path if none provided
+    if not output_path:
+        output_path = "../reports/report.md"
+    
+    # Ensure the path has .md extension
+    if not output_path.lower().endswith('.md'):
+        output_path += '.md'
     
     # Optional: Configure advanced settings
     print("\nWould you like to configure advanced settings? (y/n)")
@@ -543,13 +774,12 @@ async def interactive_report_generation():
         report = await generator.generate_report(topic, output_path)
         
         print("\n🎉 Report generation complete!")
-        print(f"Your report has been saved to: {output_path}")
         
-        print("\nWould you like to view the report now? (y/n)")
-        if input().lower().strip() == 'y':
-            print("\n" + "="*60)
-            print(report)
-            print("="*60)
+        # Always show the report content
+        print("\nReport content:")
+        print("="*60)
+        print(report)
+        print("="*60)
             
     except Exception as e:
         print(f"\n❌ An error occurred: {str(e)}")
