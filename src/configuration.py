@@ -25,7 +25,8 @@ class Configuration:
     """The configurable fields for the chatbot."""
     # Report settings
     report_structure: str = DEFAULT_REPORT_STRUCTURE
-    number_of_queries: int = 10  # Increased from 1 to get more comprehensive coverage
+    number_of_queries: int = 8  # Increased for better initial research coverage
+    section_queries: int = 5  # Increased per-section queries for deeper research
     tavily_topic: str = "general"
     tavily_days: str = None
     
@@ -35,11 +36,15 @@ class Configuration:
     writer_model: str = "claude-3-5-sonnet-latest"
     
     # Search settings
-    max_results_per_source: int = 50  # Increased from 1 to get more comprehensive results
-    min_relevance_score: float = 60.0  # Minimum score (0-100) for ranked results
-    max_concurrent_fetches: int = 5  # Maximum concurrent content fetches
-    fetch_timeout: int = 30  # Timeout for content fetching in seconds
-    fetch_retries: int = 3  # Number of retries for failed content fetches
+    max_results_per_source: int = 15  # Focused on quality over quantity
+    min_relevance_score: float = 80.0  # Higher relevance threshold
+    max_concurrent_fetches: int = 5  # Balanced for reliability
+    fetch_timeout: int = 30  # Standard timeout
+    fetch_retries: int = 3  # Standard retries
+    
+    # Context settings
+    max_context_length: int = 4000  # Standard context length
+    min_context_overlap: int = 200  # Reduced overlap - wasn't providing significant benefit
 
     def __post_init__(self):
         # Set the planner model based on the model type

@@ -24,11 +24,7 @@ class Sections(BaseModel):
 
 class SearchQuery(BaseModel):
     search_query: str = Field(
-        description="Query for web search.",
-    )
-    explanation: str = Field(
-        default="",
-        description="Optional explanation of what this query aims to find."
+        description="The search query to execute.",
     )
 
     def __str__(self) -> str:

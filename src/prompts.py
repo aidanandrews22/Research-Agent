@@ -9,13 +9,15 @@ The report structure will follow these guidelines:
 
 {report_organization}
 
-Your goal is to generate {number_of_queries} search queries that will help gather comprehensive information for planning the report sections.
+Your goal is to generate {number_of_queries} high-quality search queries that will help gather comprehensive information for planning the report sections.
 
 The queries should:
-1. Be directly related to the topic
+1. Be directly related to the topic and its key aspects
 2. Help gather information useful for planning the report structure
-3. Be specific and focused
-4. Avoid JSON or structural elements in the query text itself
+3. Be specific, focused, and contextually relevant
+4. Build upon each other to cover different aspects of the topic
+5. Avoid redundancy and overlapping coverage
+6. Avoid JSON or structural elements in the query text itself
 
 IMPORTANT: Return your response in EXACTLY this format, with no additional text:
 {{
@@ -29,9 +31,9 @@ IMPORTANT: Return your response in EXACTLY this format, with no additional text:
 Example of GOOD queries for a CSV processing topic:
 {{
     "queries": [
-        {{"search_query": "best practices for CSV data extraction and processing in Python"}},
-        {{"search_query": "efficient CSV parsing and indexing techniques for large datasets"}},
-        {{"search_query": "integrating CSV data with language models and NLP systems"}}
+        {{"search_query": "latest advancements in CSV data extraction and processing Python 2024"}},
+        {{"search_query": "performance comparison of CSV parsing libraries for large datasets"}},
+        {{"search_query": "real-world case studies CSV data integration with language models"}}
     ]
 }}
 
@@ -40,6 +42,7 @@ Example of BAD queries to avoid:
 - Vague queries like "CSV processing"
 - Queries that are just keywords without context
 - Structural elements like "queries:" or "search_query:"
+- Redundant queries that cover the same ground
 """
 
 # Prompt generating the report outline
@@ -85,18 +88,20 @@ Section Topic:
 Guidelines for writing:
 
 1. Technical Accuracy:
-- Include specific version numbers
+- Include specific version numbers and dates
 - Reference concrete metrics/benchmarks
-- Cite official documentation
+- Cite official documentation and primary sources
 - Use technical terminology precisely
+- Cross-reference information from multiple sources
 
 2. Length and Style:
 - Strict 150-200 word limit
 - No marketing language
-- Technical focus
+- Technical focus with practical insights
 - Write in simple, clear language
 - Start with your most important insight in **bold**
 - Use short paragraphs (2-3 sentences max)
+- Ensure logical flow between paragraphs
 
 3. Structure:
 - Use ## for section title (Markdown format)
@@ -108,25 +113,28 @@ Guidelines for writing:
     - Ensure proper indentation and spacing
 - End with ### Sources that references the below source material formatted as:
   * List each source with title, date, and URL
-  * Format: `- Title : URL`
+  * Format: `- Title (Date): URL`
 
-3. Writing Approach:
+4. Writing Approach:
 - Include at least one specific example or case study
 - Use concrete details over general statements
 - Make every word count
 - No preamble prior to creating the section content
 - Focus on your single most important point
+- Ensure content builds on previous sections when relevant
 
-4. Use this source material to help write the section:
+5. Use this source material to help write the section:
 {context}
 
-5. Quality Checks:
+6. Quality Checks:
 - Exactly 150-200 words (excluding title and sources)
 - Careful use of only ONE structural element (table or list) and only if it helps clarify your point
 - One specific example / case study
 - Starts with bold insight
 - No preamble prior to creating the section content
-- Sources cited at end"""
+- Sources cited at end
+- Information is cross-referenced and verified
+- Content flows logically from previous sections"""
 
 final_section_writer_instructions="""You are an expert technical writer crafting a section that synthesizes information from the rest of the report.
 
@@ -142,18 +150,20 @@ For Introduction:
 - Use # for report title (Markdown format)
 - 50-100 word limit
 - Write in simple and clear language
-- Focus on the core motivation for the report in 1-2 paragraphs
+- Focus on the core motivation and context for the report in 1-2 paragraphs
 - Use a clear narrative arc to introduce the report
 - Include NO structural elements (no lists or tables)
 - No sources section needed
+- Set clear expectations for what the report will cover
 
 For Conclusion/Summary:
 - Use ## for section title (Markdown format)
 - 100-150 word limit
 - For comparative reports:
     * Must include a focused comparison table using Markdown table syntax
-    * Table should distill insights from the report
+    * Table should distill key insights from the report
     * Keep table entries clear and concise
+    * Ensure table adds value beyond simply restating content
 - For non-comparative reports: 
     * Only use ONE structural element IF it helps distill the points made in the report:
     * Either a focused table comparing items present in the report (using Markdown table syntax)
@@ -161,16 +171,22 @@ For Conclusion/Summary:
       - Use `*` or `-` for unordered lists
       - Use `1.` for ordered lists
       - Ensure proper indentation and spacing
-- End with specific next steps or implications
+- End with specific next steps, implications, or future directions
 - No sources section needed
+- Ensure synthesis of key themes across sections
 
-3. Writing Approach:
+2. Writing Approach:
 - Use concrete details over general statements
 - Make every word count
 - Focus on your single most important point
+- Draw connections between sections
+- Highlight key patterns or trends
+- Address any gaps or areas for future research
 
-4. Quality Checks:
+3. Quality Checks:
 - For introduction: 50-100 word limit, # for report title, no structural elements, no sources section
 - For conclusion: 100-150 word limit, ## for section title, only ONE structural element at most, no sources section
 - Markdown format
+- Clear synthesis of report content
+- Actionable next steps or implications
 - Do not include word count or any preamble in your response"""
